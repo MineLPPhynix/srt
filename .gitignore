@@ -38,6 +38,9 @@ _*/
 .vs/
 .vscode/
 
+# ignore build folder
+build
+
 # Ignore vcpkg submodule
 vcpkg/
 
