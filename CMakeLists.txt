@@ -310,34 +310,37 @@ endif()
 
 if (ENABLE_ENCRYPTION)
 	if ("${USE_ENCLIB}" STREQUAL "gnutls")
-		set (SSL_REQUIRED_MODULES "gnutls nettle")
-		if (WIN32)
-			if (MINGW)
-				set (SSL_REQUIRED_MODULES "${SSL_REQUIRED_MODULES} zlib")
-			endif()
-		endif()
-
-		pkg_check_modules (SSL REQUIRED ${SSL_REQUIRED_MODULES})
-
 		add_definitions(
 			-DUSE_GNUTLS=1
 		)
+		if("${SSL_LIBRARIES}" STREQUAL "" OR "${SSL_INCLUDE_DIRS}" STREQUAL "")
+			set (SSL_REQUIRED_MODULES "gnutls nettle")
+			if (WIN32)
+				if (MINGW)
+					set (SSL_REQUIRED_MODULES "${SSL_REQUIRED_MODULES} zlib")
+				endif()
+			endif()
 
-		link_directories(
-			${SSL_LIBRARY_DIRS}
-		)
+			pkg_check_modules (SSL REQUIRED ${SSL_REQUIRED_MODULES})
+
+			link_directories(
+				${SSL_LIBRARY_DIRS}
+			)
+		endif()
 	elseif ("${USE_ENCLIB}" STREQUAL "mbedtls")
 		add_definitions(-DUSE_MBEDTLS=1)
-		if ("${SSL_LIBRARY_DIRS}" STREQUAL "")
-			set(MBEDTLS_PREFIX "${CMAKE_PREFIX_PATH}" CACHE PATH "The path of mbedtls")
-			find_package(MbedTLS REQUIRED)
-			set (SSL_INCLUDE_DIRS ${MBEDTLS_INCLUDE_DIR})
-			set (SSL_LIBRARIES  ${MBEDTLS_LIBRARIES})
+		if("${SSL_LIBRARIES}" STREQUAL "" OR "${SSL_INCLUDE_DIRS}" STREQUAL "")
+			if ("${SSL_LIBRARY_DIRS}" STREQUAL "")
+				set(MBEDTLS_PREFIX "${CMAKE_PREFIX_PATH}" CACHE PATH "The path of mbedtls")
+				find_package(MbedTLS REQUIRED)
+				set (SSL_INCLUDE_DIRS ${MBEDTLS_INCLUDE_DIR})
+				set (SSL_LIBRARIES  ${MBEDTLS_LIBRARIES})
+			endif()
+			if ("${SSL_LIBRARIES}" STREQUAL "")
+				set (SSL_LIBRARIES  mbedtls mbedcrypto)
+			endif()
+			message(STATUS "SSL enforced mbedtls: -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 		endif()
-		if ("${SSL_LIBRARIES}" STREQUAL "")
-			set (SSL_LIBRARIES  mbedtls mbedcrypto)
-		endif()
-		message(STATUS "SSL enforced mbedtls: -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 
 		foreach(LIB ${SSL_LIBRARIES})
 			if(IS_ABSOLUTE ${LIB} AND EXISTS ${LIB})
@@ -349,72 +352,76 @@ if (ENABLE_ENCRYPTION)
 	elseif ("${USE_ENCLIB}" STREQUAL "openssl-evp")
 		# Openssl-EVP requires CRYSPR2
 		add_definitions(-DUSE_OPENSSL_EVP=1 -DCRYSPR2)
-		set (SSL_REQUIRED_MODULES "openssl libcrypto")
-		# Try using pkg-config method first if enabled,
-		# fall back to find_package method otherwise
-		if (USE_OPENSSL_PC)
-			pkg_check_modules(SSL ${SSL_REQUIRED_MODULES})
-			if (OPENSSL_USE_STATIC_LIBS)
-				# use `pkg-config --static xxx` found libs
-				set(SSL_LIBRARIES ${SSL_STATIC_LIBRARIES})
+		if("${SSL_LIBRARIES}" STREQUAL "" OR "${SSL_INCLUDE_DIRS}" STREQUAL "")
+			set (SSL_REQUIRED_MODULES "openssl libcrypto")
+			# Try using pkg-config method first if enabled,
+			# fall back to find_package method otherwise
+			if (USE_OPENSSL_PC)
+				pkg_check_modules(SSL ${SSL_REQUIRED_MODULES})
+				if (OPENSSL_USE_STATIC_LIBS)
+					# use `pkg-config --static xxx` found libs
+					set(SSL_LIBRARIES ${SSL_STATIC_LIBRARIES})
+				endif()
 			endif()
-		endif()
-		if (SSL_FOUND)
-			# We have some cases when pkg-config is improperly configured
-			# When it doesn't ship the -L and -I options, and the CMAKE_PREFIX_PATH
-			# is set (also through `configure`), then we have this problem. If so,
-			# set forcefully the -I and -L contents to prefix/include and
-			# prefix/lib.
-			if ("${SSL_LIBRARY_DIRS}" STREQUAL "")
-			if (NOT "${CMAKE_PREFIX_PATH}" STREQUAL "")
-				message(STATUS "WARNING: pkg-config has incorrect prefix - enforcing target path prefix: ${CMAKE_PREFIX_PATH}")
-				set (SSL_LIBRARY_DIRS ${CMAKE_PREFIX_PATH}/${CMAKE_INSTALL_LIBDIR})
-				set (SSL_INCLUDE_DIRS ${CMAKE_PREFIX_PATH}/include)
-			endif()
-			endif()
+			if (SSL_FOUND)
+				# We have some cases when pkg-config is improperly configured
+				# When it doesn't ship the -L and -I options, and the CMAKE_PREFIX_PATH
+				# is set (also through `configure`), then we have this problem. If so,
+				# set forcefully the -I and -L contents to prefix/include and
+				# prefix/lib.
+				if ("${SSL_LIBRARY_DIRS}" STREQUAL "")
+				if (NOT "${CMAKE_PREFIX_PATH}" STREQUAL "")
+					message(STATUS "WARNING: pkg-config has incorrect prefix - enforcing target path prefix: ${CMAKE_PREFIX_PATH}")
+					set (SSL_LIBRARY_DIRS ${CMAKE_PREFIX_PATH}/${CMAKE_INSTALL_LIBDIR})
+					set (SSL_INCLUDE_DIRS ${CMAKE_PREFIX_PATH}/include)
+				endif()
+				endif()
 
-			link_directories(
-				${SSL_LIBRARY_DIRS}
-			)
-			message(STATUS "SSL via pkg-config: -L ${SSL_LIBRARY_DIRS} -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
-		else()
-			find_package(OpenSSL REQUIRED)
-			set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
-			set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
-			message(STATUS "SSL via find_package(OpenSSL): -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
+				link_directories(
+					${SSL_LIBRARY_DIRS}
+				)
+				message(STATUS "SSL via pkg-config: -L ${SSL_LIBRARY_DIRS} -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
+			else()
+				find_package(OpenSSL REQUIRED)
+				set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
+				set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
+				message(STATUS "SSL via find_package(OpenSSL): -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
+			endif()
 		endif()
 	else() # openssl
 		# Openssl (Direct-AES API) can use CRYSPR2
 		add_definitions(-DUSE_OPENSSL=1 -DCRYSPR2)
+		if("${SSL_LIBRARIES}" STREQUAL "" OR "${SSL_INCLUDE_DIRS}" STREQUAL "")
 			set (SSL_REQUIRED_MODULES "openssl libcrypto")
-		# Try using pkg-config method first if enabled,
-		# fall back to find_package method otherwise
-		if (USE_OPENSSL_PC)
-			pkg_check_modules(SSL ${SSL_REQUIRED_MODULES})
-		endif()
-		if (SSL_FOUND)
-			# We have some cases when pkg-config is improperly configured
-			# When it doesn't ship the -L and -I options, and the CMAKE_PREFIX_PATH
-			# is set (also through `configure`), then we have this problem. If so,
-			# set forcefully the -I and -L contents to prefix/include and
-			# prefix/lib.
-			if ("${SSL_LIBRARY_DIRS}" STREQUAL "")
-			if (NOT "${CMAKE_PREFIX_PATH}" STREQUAL "")
-				message(STATUS "WARNING: pkg-config has incorrect prefix - enforcing target path prefix: ${CMAKE_PREFIX_PATH}")
-				set (SSL_LIBRARY_DIRS ${CMAKE_PREFIX_PATH}/${CMAKE_INSTALL_LIBDIR})
-				set (SSL_INCLUDE_DIRS ${CMAKE_PREFIX_PATH}/include)
+			# Try using pkg-config method first if enabled,
+			# fall back to find_package method otherwise
+			if (USE_OPENSSL_PC)
+				pkg_check_modules(SSL ${SSL_REQUIRED_MODULES})
 			endif()
-			endif()
+			if (SSL_FOUND)
+				# We have some cases when pkg-config is improperly configured
+				# When it doesn't ship the -L and -I options, and the CMAKE_PREFIX_PATH
+				# is set (also through `configure`), then we have this problem. If so,
+				# set forcefully the -I and -L contents to prefix/include and
+				# prefix/lib.
+				if ("${SSL_LIBRARY_DIRS}" STREQUAL "")
+				if (NOT "${CMAKE_PREFIX_PATH}" STREQUAL "")
+					message(STATUS "WARNING: pkg-config has incorrect prefix - enforcing target path prefix: ${CMAKE_PREFIX_PATH}")
+					set (SSL_LIBRARY_DIRS ${CMAKE_PREFIX_PATH}/${CMAKE_INSTALL_LIBDIR})
+					set (SSL_INCLUDE_DIRS ${CMAKE_PREFIX_PATH}/include)
+				endif()
+				endif()
 
-			link_directories(
-				${SSL_LIBRARY_DIRS}
-			)
-			message(STATUS "SSL via pkg-config: -L ${SSL_LIBRARY_DIRS} -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
-		else()
-			find_package(OpenSSL REQUIRED)
-			set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
-			set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
-			message(STATUS "SSL via find_package(OpenSSL): -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
+				link_directories(
+					${SSL_LIBRARY_DIRS}
+				)
+				message(STATUS "SSL via pkg-config: -L ${SSL_LIBRARY_DIRS} -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
+			else()
+				find_package(OpenSSL REQUIRED)
+				set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
+				set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
+				message(STATUS "SSL via find_package(OpenSSL): -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
+			endif()
 		endif()
 
 	endif()
